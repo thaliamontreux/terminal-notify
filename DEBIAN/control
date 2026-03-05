@@ -1,0 +1,10 @@
+Package: terminal-notify
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Depends: bash, coreutils
+Maintainer: Your Name <you@example.com>
+Description: Terminal notification system
+ This package installs a robust terminal notification system
+ with bottom-right popup boxes for all terminals.

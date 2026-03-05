@@ -1,0 +1,92 @@
+#!/bin/bash
+# /usr/bin/notify-robust-final
+# Fully safe, bottom-right, word-wrap, max 8 lines, handles emojis and long words
+# POSIX-safe, avoids [[ =~ ]] syntax errors
+
+msg="$1"
+type="${2:-info}"
+timeout="${3:-5}"
+
+MAX_BOX_WIDTH=30
+MAX_TEXT_WIDTH=$((MAX_BOX_WIDTH - 4))  # width for text inside
+MAX_LINES=8
+
+# --- sanitize input: remove control characters except spaces ---
+msg=$(echo "$msg" | tr -d '\000-\037\177')
+
+# --- Word-wrap safely ---
+lines=()
+while [ -n "$msg" ]; do
+    if [ ${#msg} -le $MAX_TEXT_WIDTH ]; then
+        lines+=("$msg")
+        break
+    fi
+    # find last space within width
+    space_pos=$(echo "${msg:0:$MAX_TEXT_WIDTH}" | awk '{for(i=length;i>0;i--){if(substr($0,i,1)==" "){print i; exit}}}')
+    if [ -z "$space_pos" ]; then
+        # no space, hard wrap
+        lines+=("${msg:0:$MAX_TEXT_WIDTH}")
+        msg="${msg:$MAX_TEXT_WIDTH}"
+    else
+        lines+=("${msg:0:$((space_pos-1))}")
+        msg="${msg:$space_pos}"
+    fi
+done
+
+# trim to max lines
+lines=("${lines[@]:0:$MAX_LINES}")
+num_lines=${#lines[@]}
+height=$((num_lines + 2))
+
+# --- Display safely to all writable terminals ---
+for tty in /dev/pts/*; do
+    [ -w "$tty" ] || continue
+
+    read rows cols < <(stty -F "$tty" size 2>/dev/null || echo "24 80")
+    start_row=$((rows - height))
+    [ $start_row -lt 0 ] && start_row=0
+    start_col=$((cols - MAX_BOX_WIDTH))
+    [ $start_col -lt 0 ] && start_col=0
+
+    (
+        # save cursor
+        echo -ne "\033[s" > "$tty" 2>/dev/null
+
+        # top border
+        echo -ne "\033[${start_row};${start_col}H┌$(printf '%*s' $((MAX_BOX_WIDTH-2)) '' | tr ' ' '─')┐" > "$tty" 2>/dev/null
+
+        # text lines with multi-byte safe padding (POSIX-safe)
+        for ((i=0;i<num_lines;i++)); do
+            line="${lines[i]}"
+            display_width=0
+            for ((j=0;j<${#line};j++)); do
+                c="${line:j:1}"
+                # POSIX-safe: treat chars with ASCII code >127 as width 2
+                ascii=$(printf '%d' "'$c" 2>/dev/null || echo 0)
+                if [ "$ascii" -gt 127 ]; then
+                    display_width=$((display_width+2))
+                else
+                    display_width=$((display_width+1))
+                fi
+            done
+
+            pad_len=$((MAX_TEXT_WIDTH - display_width))
+            [ $pad_len -lt 0 ] && pad_len=0
+            padded="$line$(printf '%*s' $pad_len '')"
+
+            echo -ne "\033[$((start_row+1+i));${start_col}H│ $padded │" > "$tty" 2>/dev/null
+        done
+
+        # bottom border
+        echo -ne "\033[$((start_row+height-1));${start_col}H└$(printf '%*s' $((MAX_BOX_WIDTH-2)) '' | tr ' ' '─')┘" > "$tty" 2>/dev/null
+
+        # restore cursor
+        echo -ne "\033[u" > "$tty" 2>/dev/null
+
+        # wait and clear safely
+        sleep "$timeout"
+        for ((i=0;i<height;i++)); do
+            echo -ne "\033[$((start_row+i));${start_col}H$(printf '%*s' $MAX_BOX_WIDTH '')" > "$tty" 2>/dev/null
+        done
+    ) &
+done

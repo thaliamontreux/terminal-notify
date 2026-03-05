@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+
+systemctl stop terminal-notify.service
+systemctl disable terminal-notify.service
+
+exit 0

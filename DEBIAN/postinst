@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+
+# Reload systemd, enable, start service
+systemctl daemon-reload
+systemctl enable terminal-notify.service
+systemctl start terminal-notify.service
+
+exit 0

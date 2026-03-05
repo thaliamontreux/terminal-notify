@@ -1,0 +1,47 @@
+#!/bin/bash
+# /usr/bin/notify-daemon
+# Watches systemd journal and queues messages to /tmp/notify/
+
+QUEUE_DIR="/tmp/notify"
+mkdir -p "$QUEUE_DIR"
+chmod 700 "$QUEUE_DIR"
+
+DEFAULT_TIMEOUT=5
+MAX_QUEUE_LINES=8
+PRIORITIES="0..4"  # emerg, alert, crit, err, warning
+
+# --- Function to enqueue a message ---
+enqueue_msg() {
+    local msg="$1"
+    local type="$2"
+    local timeout="$3"
+
+    ts=$(date +%s%N)
+    echo "${type}|${timeout}|${msg}" > "$QUEUE_DIR/${ts}.msg"
+}
+
+# --- Watch journal and enqueue relevant messages ---
+journalctl -f -p "$PRIORITIES" | while read -r line; do
+    type="info"
+    [[ "$line" =~ "CRIT"|"crit"|"critical" ]] && type="critical"
+    [[ "$line" =~ "ERR"|"err"|"error" ]] && type="critical"
+    [[ "$line" =~ "WARN"|"Warning"|"warn" ]] && type="warning"
+
+    enqueue_msg "$line" "$type" "$DEFAULT_TIMEOUT"
+done &
+
+# --- Process the queue continuously ---
+while true; do
+    for file in "$QUEUE_DIR"/*.msg; do
+        [ -e "$file" ] || continue
+
+        IFS='|' read -r type timeout msg < "$file"
+        timeout="${timeout:-$DEFAULT_TIMEOUT}"
+        type="${type:-info}"
+
+        /usr/bin/notify "$msg" "$type" "$timeout"
+
+        rm -f "$file"
+    done
+    sleep 1
+done

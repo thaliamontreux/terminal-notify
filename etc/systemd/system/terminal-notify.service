@@ -1,0 +1,13 @@
+[Unit]
+Description=Terminal Notification Daemon with Queue
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/notify-daemon
+Restart=always
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target
